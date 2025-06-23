@@ -115,6 +115,64 @@ def ensure_collection(client: QdrantClient, name: str, dim: int):
         logger.info(f"▶️  Created collection '{name}' (dim={dim})")
 
 
+def run_indexing_pipeline(
+        host: str,
+        port: int,
+        collection: str,
+        data_path: str,
+        model_name: str,
+        chunk_size: int,
+        chunk_overlap: int
+):
+    """
+    The core logic for creating and populating the Qdrant collection.
+    This function is designed to be called from tests or other scripts.
+    """
+    logger.info(f"📂 Reading PDFs from: {Path(data_path).resolve()}")
+
+    # with tracer.start_as_current_span("load_and_split_docs") as child_span:
+    docs = load_and_split(data_path, chunk_size, chunk_overlap)
+    # child_span.set_attribute("num_documents_after_split", len(docs))
+
+    if not docs:
+        logger.warning("⚠️  No PDF documents found. Exiting.")
+        # child_span.set_attribute("result", "no_documents_found")
+        return
+
+    texts = [d.page_content for d in docs]
+    payloads = build_payloads(docs)
+
+    logger.info(f"🧠 Loading embedding model: {model_name}")
+    model = SentenceTransformer(model_name)
+    dim = model.get_sentence_embedding_dimension()
+    # child_span.set_attribute("embedding.dimension", dim)
+
+    logger.info("🔢 Encoding embeddings…")
+    # with tracer.start_as_current_span("encode_embeddings"):
+    embeddings = model.encode(texts, show_progress_bar=True, batch_size=64)
+
+    logger.info(f"🔌 Connecting to Qdrant → {host}:{port}")
+    client = QdrantClient(host=host, port=port)
+    ensure_collection(client, collection, dim)
+
+    logger.info("⬆️  Upserting into Qdrant…")
+    ids = [(uuid.uuid4().int >> 64) for _ in range(len(embeddings))]
+
+    # with tracer.start_as_current_span("upsert_to_qdrant") as child_span:
+    client.upsert(
+        collection_name=collection,
+        points=models.Batch(ids=ids, vectors=embeddings, payloads=payloads),
+    )
+    # child_span.set_attribute("num_vectors_upserted", len(embeddings))
+
+    logger.info(f"✅ {len(embeddings)} chunks upserted into '{collection}'")
+    # child_span.set_attribute("result", "success")
+    # child_span.set_attribute("chunks_upserted", len(embeddings))
+    num_chunks = len(embeddings)
+
+    return num_chunks
+
+
 def main():
     # Починаємо головний спан для всього процесу
     with tracer.start_as_current_span("create_embeddings_job") as span:
@@ -135,46 +193,14 @@ def main():
         span.set_attribute("embedding.chunk_size", chunk_size)
         span.set_attribute("embedding.chunk_overlap", chunk_overlap)
 
-        logger.info(f"📂 Reading PDFs from: {Path(data_path).resolve()}")
-
-        with tracer.start_as_current_span("load_and_split_docs") as child_span:
-            docs = load_and_split(data_path, chunk_size, chunk_overlap)
-            child_span.set_attribute("num_documents_after_split", len(docs))
-
-        if not docs:
-            logger.warning("⚠️  No PDF documents found. Exiting.")
-            span.set_attribute("result", "no_documents_found")
-            return
-
-        texts = [d.page_content for d in docs]
-        payloads = build_payloads(docs)
-
-        logger.info(f"🧠 Loading embedding model: {model_name}")
-        model = SentenceTransformer(model_name)
-        dim = model.get_sentence_embedding_dimension()
-        span.set_attribute("embedding.dimension", dim)
-
-        logger.info("🔢 Encoding embeddings…")
-        with tracer.start_as_current_span("encode_embeddings"):
-            embeddings = model.encode(texts, show_progress_bar=True, batch_size=64)
-
-        logger.info(f"🔌 Connecting to Qdrant → {host}:{port}")
-        client = QdrantClient(host=host, port=port)
-        ensure_collection(client, collection, dim)
-
-        logger.info("⬆️  Upserting into Qdrant…")
-        ids = [(uuid.uuid4().int >> 64) for _ in range(len(embeddings))]
-
-        with tracer.start_as_current_span("upsert_to_qdrant") as child_span:
-            client.upsert(
-                collection_name=collection,
-                points=models.Batch(ids=ids, vectors=embeddings, payloads=payloads),
-            )
-            child_span.set_attribute("num_vectors_upserted", len(embeddings))
-
-        logger.info(f"✅ {len(embeddings)} chunks upserted into '{collection}'")
-        span.set_attribute("result", "success")
-        span.set_attribute("chunks_upserted", len(embeddings))
+        run_indexing_pipeline(
+            host=host,
+            port=port,
+            collection=collection,
+            data_path=data_path,
+            model_name=model_name,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap, )
 
 
 if __name__ == "__main__":
