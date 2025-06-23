@@ -28,3 +28,12 @@ logs/
 
 # ── Secrets (залишаються лише локально) ───────────────────
 .env
+
+# .dockerignore
+.git
+.github
+.vscode
+.idea
+.venv
+*.pyc
+tests

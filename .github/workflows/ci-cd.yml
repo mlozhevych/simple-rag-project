@@ -31,13 +31,16 @@ jobs:
       - name: 3. Install Python dependencies
         run: poetry install
 
-      - name: 4. Start services using Docker Compose
+      - name: 4 Docker clean-up (before build)
+        run: docker system prune -af || true
+
+      - name: 5. Start services using Docker Compose
         # Передаємо секрет в docker-compose, де він буде підхоплений змінною ${OPENAI_API_KEY}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: docker compose -f docker-compose.ci.yml up -d --build
 
-      - name: 5. Wait for application to be healthy
+      - name: 6. Wait for application to be healthy
         # Цей крок критично важливий. Він чекає, поки застосунок повністю запуститься.
         # Робимо запити до /health кожні 5 секунд, максимум 12 спроб (1 хвилина).
         run: |
@@ -52,7 +55,7 @@ jobs:
           echo "❌ Application did not start in time."
           exit 1
 
-      - name: 6. Run tests
+      - name: 7. Run tests
         env:
           # Тепер pytest може звертатись і до API (localhost:8080) і до Qdrant (localhost:6333)
           QDRANT_HOST: localhost
@@ -61,7 +64,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: poetry run pytest
 
-      - name: 7. Cleanup services
+      - name: 8. Cleanup services
         # Завжди виконувати цей крок, навіть якщо тести впали, щоб зупинити контейнери
         if: always()
         run: docker compose -f docker-compose.ci.yml down
