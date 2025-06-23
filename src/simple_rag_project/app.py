@@ -114,11 +114,12 @@ def get_qa_chain():
             )
             # 2) клієнт та векторне сховище
             qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+            collection_name = os.getenv("COLLECTION_NAME", "documents")
             span.set_attribute("qdrant.url", qdrant_url)
             client = QdrantClient(url=qdrant_url)
             vectorstore = QdrantVectorStore(
                 client=client,
-                collection_name="documents",
+                collection_name=collection_name,
                 embedding=_embedding_model,
             )
             # 3) retriever

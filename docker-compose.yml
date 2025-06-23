@@ -28,6 +28,7 @@ services:
     environment:
       - QDRANT_URL=http://qdrant:6333     # для клієнта всередині контейнера
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
+      - COLLECTION_NAME=documents
       - OTEL_SERVICE_NAME=simple-rag-project
       - PROMETHEUS_MULTIPROC_DIR=/app/prometheus_multiproc_dir
     depends_on:
