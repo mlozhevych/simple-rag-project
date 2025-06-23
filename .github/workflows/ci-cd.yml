@@ -21,6 +21,11 @@ jobs:
           python-version: '3.10'
           cache: 'poetry'
 
+      - name: 2.1 Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       - name: 3. Install Python dependencies
         run: poetry install
 
