@@ -35,7 +35,7 @@ jobs:
         # Передаємо секрет в docker-compose, де він буде підхоплений змінною ${OPENAI_API_KEY}
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: docker-compose -f docker-compose.ci.yml up -d --build
+        run: docker compose -f docker-compose.ci.yml up -d --build
 
       - name: 5. Wait for application to be healthy
         # Цей крок критично важливий. Він чекає, поки застосунок повністю запуститься.
@@ -64,7 +64,7 @@ jobs:
       - name: 7. Cleanup services
         # Завжди виконувати цей крок, навіть якщо тести впали, щоб зупинити контейнери
         if: always()
-        run: docker-compose -f docker-compose.ci.yml down
+        run: docker compose -f docker-compose.ci.yml down
 
   # --- Завдання build-and-push та deploy залишаються без змін ---
   build-and-push:
