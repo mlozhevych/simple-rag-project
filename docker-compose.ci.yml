@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  # Сервіс з базою даних Qdrant
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333" # Прокидаємо порт для доступу з pytest
+
+  # Сервіс з вашим застосунком
+  app:
+    # Збираємо образ з локального Dockerfile
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080" # Прокидаємо порт для API-тестів
+    depends_on:
+      - qdrant # Запускати тільки після старту Qdrant
+    environment:
+      # Передаємо застосунку, де знаходиться Qdrant.
+      # 'qdrant' - це ім'я сервісу, яке Docker Compose перетворить на hostname.
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      # Передаємо API ключ, який буде доступний з секретів GitHub
+      - OPENAI_API_KEY=${OPENAI_API_KEY}

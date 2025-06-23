@@ -1,0 +1,98 @@
+name: CI/CD Pipeline for Simple RAG Project
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  # --- Оновлене завдання тестування (CI) ---
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Set up Python and Poetry
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'poetry'
+
+      - name: 3. Install Python dependencies
+        run: poetry install
+
+      - name: 4. Start services using Docker Compose
+        # Передаємо секрет в docker-compose, де він буде підхоплений змінною ${OPENAI_API_KEY}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: docker-compose -f docker-compose.ci.yml up -d --build
+
+      - name: 5. Wait for application to be healthy
+        # Цей крок критично важливий. Він чекає, поки застосунок повністю запуститься.
+        # Робимо запити до /health кожні 5 секунд, максимум 12 спроб (1 хвилина).
+        run: |
+          for i in {1..12}; do
+            if curl -f http://localhost:8080/health; then
+              echo "✅ Application is healthy!"
+              exit 0
+            fi
+            echo "⏳ Waiting for application to start..."
+            sleep 5
+          done
+          echo "❌ Application did not start in time."
+          exit 1
+
+      - name: 6. Run tests
+        env:
+          # Тепер pytest може звертатись і до API (localhost:8080) і до Qdrant (localhost:6333)
+          QDRANT_HOST: localhost
+          QDRANT_PORT: 6333
+          APP_BASE_URL: http://localhost:8080 # Рекомендація для гнучкості тестів
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: poetry run pytest
+
+      - name: 7. Cleanup services
+        # Завжди виконувати цей крок, навіть якщо тести впали, щоб зупинити контейнери
+        if: always()
+        run: docker-compose -f docker-compose.ci.yml down
+
+  # --- Завдання build-and-push та deploy залишаються без змін ---
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+      - name: 2. Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 3. Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+      - name: 4. Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: 1. Example Deployment Step
+        run: echo "🚀 Deploying image ghcr.io/${{ github.repository }}:latest"
