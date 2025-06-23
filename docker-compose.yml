@@ -1,0 +1,147 @@
+services:
+  ###########################################################################
+  #  Qdrant – векторна база даних (HTTP 6333, gRPC 6334)                    #
+  ###########################################################################
+  qdrant:
+    image: qdrant/qdrant:latest               # фіксуємо тег для відтворюваності
+    container_name: qdrant-local
+    ports:
+      - "6333:6333"       # HTTP / REST-API + WebUI
+      - "6334:6334"       # gRPC
+    networks:
+      - monitoring
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  ###########################################################################
+  #  Flask RAG API                                                          #
+  ###########################################################################
+  simple-rag-project:
+    build:
+      context: .                   # Dockerfile у корені
+      dockerfile: Dockerfile
+    container_name: simple-rag-project
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env                       # HF_API_TOKEN та інші секрети
+    environment:
+      - QDRANT_URL=http://qdrant:6333     # для клієнта всередині контейнера
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318/v1/traces
+      - OTEL_SERVICE_NAME=simple-rag-project
+      - PROMETHEUS_MULTIPROC_DIR=/app/prometheus_multiproc_dir
+    depends_on:
+      qdrant:
+        condition: service_started
+      otel-collector:
+        condition: service_started
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  ###########################################################################
+  #  OpenTelemetry Collector → ClickHouse                                   #
+  ###########################################################################
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    command: ["--config=/etc/otel-collector-config.yml"]
+    volumes:
+      - ./monitoring/otel-collector-config.yml:/etc/otel-collector-config.yml
+    ports:
+      - "4317:4317"   # gRPC
+      - "4318:4318"   # HTTP (OTLP)
+      - "8888:8888"   # Metrics
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  ###########################################################################
+  #  Prometheus + Node Exporter + Grafana                                   #
+  ###########################################################################
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clickhouse-datasource
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+      - clickhouse
+    networks:
+      - monitoring
+    restart: unless-stopped
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  clickhouse_data:
+  qdrant_data:

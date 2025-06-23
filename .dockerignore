@@ -1,0 +1,30 @@
+# ── Python / build artefacts ───────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# ── Venvs & Poetry ─────────────────────────────────────────
+.venv/
+env/
+venv/
+
+# ── IDE / VCS ──────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Data & model artefacts (якщо не потрібні в образі) ─────
+data/
+.qdrant_data/
+logs/
+*.log
+
+# ── Secrets (залишаються лише локально) ───────────────────
+.env
