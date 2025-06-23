@@ -1,16 +1,9 @@
-version: '3.8'
-
 services:
   # Сервіс з базою даних Qdrant
   qdrant:
     image: qdrant/qdrant:latest
     ports:
       - "6333:6333" # Прокидаємо порт для доступу з pytest
-    healthcheck:
-      test: [ "CMD", "wget", "-qO-", "http://localhost:6333/healthz" ]
-      interval: 10s
-      timeout: 3s
-      retries: 15
 
   # Сервіс з вашим застосунком
   app:
@@ -21,8 +14,7 @@ services:
     ports:
       - "8080:8080" # Прокидаємо порт для API-тестів
     depends_on:
-      qdrant: # Запускати тільки після старту Qdrant
-        condition: service_healthy
+      - qdrant # Запускати тільки після старту Qdrant
     environment:
       # Передаємо застосунку, де знаходиться Qdrant.
       # 'qdrant' - це ім'я сервісу, яке Docker Compose перетворить на hostname.
@@ -31,7 +23,7 @@ services:
       # Передаємо API ключ, який буде доступний з секретів GitHub
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
       interval: 10s
       timeout: 3s
       retries: 15

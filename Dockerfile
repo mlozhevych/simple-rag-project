@@ -14,7 +14,7 @@ COPY pyproject.toml poetry.lock* ./
 # 2. Встановлюємо залежності
 RUN poetry install --no-ansi -vvv --no-root
 # 3. Тепер копіюємо решту коду
-COPY . .
+COPY src ./src
 
 # --- Етап 2: Фінальний образ ---
 FROM python:3.12-slim as final
